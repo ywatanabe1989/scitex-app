@@ -7,6 +7,56 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-09-06
+
+Patch. Tests only — 0.20.2 put a claim in three docstrings and checked it
+nowhere.
+
+### Added — the DB-free claim is now pinned by behaviour
+
+0.20.2 asserts that `chat_stream_view` issues no ORM query and is safe without
+a database, while the session views are not. §7 prefers a mechanical barrier to
+a written warning, and what shipped was three written warnings.
+
+Four tests, under `DATABASES={}` — Django's dummy backend, which is not a
+simulation of a missing database but *is* one, and is what
+`scitex_app._standalone` configures:
+
+    precondition   this process really has no database
+    claim          chat_stream_view does not raise ImproperlyConfigured
+    claim          ...nor with session_id, the argument most likely to
+                   look like it should cause a lookup
+    CONTROL        session_list_view DOES raise, under the same setup
+
+### WHY THE OBVIOUS GUARD IS NOT THE ONE THAT SHIPPED
+
+The natural test is "importing `_django` never loads `_models`". It was
+written, run, and **disproved**: `_django` imports `_session_views` at the
+bottom to assemble `chat_urlpatterns`, so the import does reach the models.
+Harmless — defining a model needs the app registry, not a connection — but it
+means import-reachability cannot express this claim.
+
+A grep cannot either. The paragraph EXPLAINING the rule raised `__init__.py`
+from 6 "ORM references" to 8, because docstring prose counts. The claim is
+about QUERIES, and only calling the views can ask about queries.
+
+### THE PRECONDITION IS A TEST, NOT AN ASSUMPTION
+
+Django settings are configured once per process and test order is not ours to
+choose. If another module configures a real database first, "did not raise
+ImproperlyConfigured" passes trivially and the file becomes decoration.
+
+Verified by making it happen: configuring a real sqlite backend fails the
+precondition AND the control — **two loud failures**, not a silent green.
+
+### Controls, disjoint failure sets
+
+    stream view made to touch the ORM  -> exactly the 2 claim tests fail
+    a REAL database configured         -> exactly precondition + control fail
+
+879 passed, 2 skipped. Provenance: figrecipe measured the original on their
+editor; this reproduces it where it can regress.
+
 ## [0.20.2] - 2026-09-06
 
 Patch, docs only. One word meant three things in this package, and the
