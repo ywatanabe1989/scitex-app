@@ -7,6 +7,55 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.2] - 2026-09-06
+
+Patch, docs only. One word meant three things in this package, and the
+collision is what invited 0.20.0's defect in the first place.
+
+### Fixed — "standalone" now names ONE thing
+
+    _standalone.py      the LAUNCHER, which sets DATABASES={}      <- keeps the word
+    _chat/_models.py    "simplified for standalone use"            -> SINGLE-USER
+    _chat/__init__.py   "Usage (standalone)"                       -> WITHOUT DJANGO
+    _chat/_session_views.py  "CSRF-exempt for standalone / API"    -> programmatic API
+
+Three senses, one package, and each honest in isolation. Together they told a
+leaf author — in the package's own words — that the chat views were the
+"standalone" way to use chat, while `scitex_app._standalone` is the launcher
+that configures no database for those exact views to query. figrecipe wired
+precisely that on 2026-09-06 and every session endpoint answered 500.
+
+The launcher keeps the word: it is named after it, `run_standalone()` is public
+API, and a whole shipped skill is titled *Standalone Mode*. §3 — if you must
+explain a name by restating it as something else, that something else IS the
+name.
+
+### Added — the models docstring states the requirement it assumed
+
+`ChatSession`/`ChatMessage` require a configured database. That was true before
+and written nowhere; the word that stood in its place said the opposite to a
+reader who knew the launcher.
+
+### A CORRECTION MADE WHILE WRITING THIS, kept because the error is instructive
+
+The first draft of this change also added a test asserting that importing
+`_chat._django` never loads `_models` — the obvious mechanical guard for "the
+stream view is DB-free", and §7 prefers a barrier to a warning.
+
+**Running it disproved it.** `_django.py` imports `_session_views` at the
+bottom to assemble `chat_urlpatterns`, so importing it DOES load the models.
+The test was removed rather than shipped.
+
+The stream view is still DB-free — the claim is about QUERIES, not IMPORTS, and
+defining a model needs the app registry rather than a connection. But
+import-reachability is the obvious proxy for "needs a database" and it is the
+WRONG one. That distinction is now stated in `__init__.py` where the next
+reader will reach for the same proxy.
+
+The real barrier — calling the view under `DATABASES={}` and asserting no
+`ImproperlyConfigured` — is behavioural, not doc-only, and is carded rather
+than bolted onto a docs release.
+
 ## [0.20.1] - 2026-09-06
 
 Patch. 0.20.0's refusal was right to fire and wrong about why, for one of the

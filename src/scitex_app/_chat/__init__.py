@@ -14,17 +14,35 @@ Provides:
 the bare ``from scitex_app import chat`` form (which does trigger the
 package's ``__getattr__``), then attribute-access from there.
 
-Usage (Django)::
+Usage (Django, REQUIRES A CONFIGURED DATABASE)::
 
     # urls.py
     from scitex_app import chat
     urlpatterns += chat.chat_urlpatterns
 
-Usage (standalone)::
+    # The session views (list / detail / messages) query ChatSession and
+    # ChatMessage. Mounting them into settings with no DATABASES gives a
+    # 500 per request, not a degraded mode — see _models.py.
+    # `chat_stream_view` is the exception: it issues no ORM QUERY.
+    #
+    # "No query" is the claim, NOT "no import". Importing `_django` DOES
+    # load `_models`, because `_django` imports `_session_views` at the
+    # bottom to assemble `chat_urlpatterns`. That is harmless: defining a
+    # model needs the app registry, not a connection. The distinction is
+    # worth stating because import-reachability is the obvious proxy for
+    # "needs a database" and it is the WRONG one — measured 2026-09-06,
+    # when it contradicted a test written on that assumption.
+
+Usage (WITHOUT DJANGO — no database involved)::
 
     from scitex_app import chat
     for event in chat.stream_chat("Hello", system_prompt="You are helpful."):
         print(event)
+
+This second heading said "standalone" until 0.20.2, which was a third
+meaning of that word in one package — here it meant "as a library", while
+`scitex_app._standalone` is the DB-less launcher and `_models.py` used it
+for single-user. Reserve "standalone" for the launcher.
 """
 
 from ._protocol import ChatBackend
