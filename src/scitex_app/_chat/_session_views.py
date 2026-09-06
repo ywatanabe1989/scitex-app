@@ -3,7 +3,11 @@
 """Django views for chat session CRUD.
 
 Ported from scitex-cloud's llm_app/views/sessions.py.
-All endpoints are CSRF-exempt for standalone / API use.
+All endpoints are CSRF-exempt for programmatic API use.
+
+EVERY VIEW HERE QUERIES THE ORM, so a host mounting them must configure a
+database. `chat_stream_view` in `_django.py` does not and is safe without
+one. ("standalone" is reserved for the launcher — see `_models.py`.)
 
 Endpoints:
     GET    /api/chat/sessions/                  — list sessions
