@@ -7,6 +7,46 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-09-06
+
+Minor, additive. A host with no database finally has a correct chat mount, and
+picking the wrong one now says so.
+
+### Added — `chat_stream_urlpatterns`, the database-free mount point
+
+    urlpatterns += chat.chat_stream_urlpatterns   # no database needed
+    urlpatterns += chat.chat_urlpatterns          # REQUIRES a database
+
+Until now `chat_urlpatterns` was the only list on offer, and it bundles the
+DB-free streaming route with three session CRUD routes that every one query the
+ORM. A host that configures no database — `scitex_app.run_standalone` is one,
+and it is shipped in this package — had nothing correct to mount: taking the
+only list wired in three routes that answer 500 per request. figrecipe hit
+exactly that and hand-rolled the subset; this promotes it into the SDK.
+
+`chat_urlpatterns` is now BUILT from the smaller list rather than repeating its
+route, so the two cannot drift apart, and a test asserts the subset relation.
+
+Deliberately NOT done: making one list quietly change shape depending on
+whether a database is configured. A host that adds a database later should get
+different routes because it changed its mount, not because the SDK guessed.
+
+### Added — `ChatSessionsRequireADatabaseError`, which names the actual mistake
+
+Django raised a bare `ImproperlyConfigured` here: *"settings.DATABASES is
+improperly configured. Please supply the ENGINE value."* That names a SETTING,
+not the mistake, and reads as simply wrong to a host that emptied `DATABASES`
+on purpose. The new error says what was mounted, and what to mount instead.
+
+It SUBCLASSES `ImproperlyConfigured`, so anything already catching that keeps
+working — this release breaks nothing.
+
+Scope, stated plainly: this is a better DIAGNOSIS, not a barrier. Mounting the
+full list without a database still imports and still starts; it now fails with
+a sentence that tells you what to do. Whether these views belong in this SDK at
+all is a separate open question and is not answered here.
+
+
 ## [0.20.4] - 2026-09-06
 
 Patch. The ARMED CSS check stops failing correct code. Two false positives out

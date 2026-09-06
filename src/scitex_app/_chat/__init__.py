@@ -20,6 +20,17 @@ Usage (Django, REQUIRES A CONFIGURED DATABASE)::
     from scitex_app import chat
     urlpatterns += chat.chat_urlpatterns
 
+Usage (Django, NO DATABASE — streaming only)::
+
+    # urls.py
+    from scitex_app import chat
+    urlpatterns += chat.chat_stream_urlpatterns
+
+    # This is the correct mount for a host that configures no database,
+    # `scitex_app.run_standalone` among them. Added in 0.21.0; before it,
+    # `chat_urlpatterns` was the only list on offer and such a host had to
+    # mount three routes it could not serve.
+
     # The session views (list / detail / messages) query ChatSession and
     # ChatMessage. Mounting them into settings with no DATABASES gives a
     # 500 per request, not a degraded mode — see _models.py.
@@ -63,6 +74,14 @@ def __getattr__(name: str):
         from ._django import chat_urlpatterns
 
         return chat_urlpatterns
+    if name == "chat_stream_urlpatterns":
+        from ._django import chat_stream_urlpatterns
+
+        return chat_stream_urlpatterns
+    if name == "ChatSessionsRequireADatabaseError":
+        from ._session_views import ChatSessionsRequireADatabaseError
+
+        return ChatSessionsRequireADatabaseError
     if name == "chat_stream_view":
         from ._django import chat_stream_view
 
