@@ -28,6 +28,11 @@ if not settings.configured:
         DEFAULT_CHARSET="utf-8",
         ALLOWED_HOSTS=["*"],
         DATABASES={},
+        # One real app, so "is this label installed" can be asked in BOTH
+        # directions. Identical in every _chat test module: Django configures
+        # settings once per process and the module order is not ours to
+        # choose, so the blocks must agree or the fixture depends on luck.
+        INSTALLED_APPS=["django.contrib.contenttypes"],
     )
     django.setup()
 
