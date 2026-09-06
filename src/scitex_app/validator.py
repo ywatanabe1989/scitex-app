@@ -140,6 +140,22 @@ from scitex_app.appmaker._validate._js import (  # noqa: E402
     JS_SKIP_DIRS as SKIP_DIRS,
 )
 
+# COMMENT STRIPPING, IMPORTED FROM THE CANONICAL RULE rather than reimplemented.
+# `validate_css` below matched raw file text, so a stylesheet that merely
+# MENTIONED a shell selector in a comment — including one warning readers not to
+# style it — was reported as targeting it.
+from scitex_app.appmaker._validate._comments import (  # noqa: E402
+    strip_css_comments,
+)
+
+# A NAME ENDS WHERE THE NAME ENDS. Same boundary `_frame.py` gained in 0.18.1,
+# for the same reason: `"#main-content" in content` is true of
+# `#main-content-of-mine`, which is an id an app owns. The leading guard is
+# needed for the same reason in the other direction, and `#`/`.` are excluded
+# from it because the table's own entries carry those sigils.
+_SELECTOR_HEAD = r"(?<![\w.#-])"
+_SELECTOR_TAIL = r"(?![\w-])"
+
 
 @dataclass
 class ValidationResult:
@@ -263,7 +279,25 @@ class AppValidator:
         return bool(SKIP_DIRS & set(path.parts))
 
     def validate_css(self) -> None:
-        """Check CSS source files don't target shell elements."""
+        """Check CSS source files don't target shell elements.
+
+        STILL A NAME SCAN, NOT A PARSER — see `validate_css_canonical`, which
+        models rule blocks and is the correct answer to this question. This
+        method exists because that rule is deliberately UNARMED, and until it
+        is armed the ARMED check should at least not fail correct code.
+
+        What it no longer does, both measured on the shipped 0.20.3 before the
+        fix, with a control that the real violation still fires:
+
+            /* do not style #main-content */   flagged  -> comments stripped
+            .myapp #main-content-of-mine {}    flagged  -> name boundaries
+
+        What it still cannot do, and why the canonical rule remains the
+        destination: it has no notion of a rule block, so it cannot tell
+        `.mine #main-content` (reaching the shell through a descendant
+        combinator) from an app's own scoped node, and it cannot see tier-3
+        selectors that reach the shell WITHOUT naming anything.
+        """
         for css_file in self.app_path.rglob("*.css"):
             if self._should_skip(css_file):
                 continue
@@ -272,8 +306,11 @@ class AppValidator:
             except OSError:
                 continue
 
+            content = strip_css_comments(content)
+
             for selector in SHELL_SELECTORS:
-                if selector in content:
+                pattern = _SELECTOR_HEAD + re.escape(selector) + _SELECTOR_TAIL
+                if re.search(pattern, content):
                     rel = css_file.relative_to(self.app_path)
                     self._result.add_error(
                         f"{rel}: targets shell selector '{selector}' — "

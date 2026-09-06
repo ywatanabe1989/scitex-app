@@ -7,6 +7,51 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.20.4] - 2026-09-06
+
+Patch. The ARMED CSS check stops failing correct code. Two false positives out
+of three fixtures, measured on the shipped 0.20.3 with a control.
+
+### Fixed — `AppValidator.validate_css` reads comments and name boundaries
+
+    /* do not style #main-content */    flagged   -> comments now stripped
+    .myapp #main-content-of-mine {}     flagged   -> name boundaries added
+    #main-content {}                    flagged   -> CONTROL, still flagged
+
+The first is a stylesheet **warning readers not to style a shell selector**,
+reported as targeting it. The second is an id the app owns, caught because
+`"#main-content" in content` is true of any longer name starting with it —
+the same defect `_frame.py` shed in 0.18.1, and the same boundary fixes it.
+
+Both primitives are IMPORTED from the canonical rule (`strip_css_comments`,
+and the `(?<![\w.#-])` / `(?![\w-])` pair) rather than reimplemented. This is
+the fourth thing this module now imports instead of declaring, after the JS
+patterns, the manifest keys and the skip dirs.
+
+### NOT changed — the canonical rule is still not armed
+
+The right fix is to point this method at `validate_css_canonical`, which models
+rule blocks and gets all of these right. That rule stays deliberately UNARMED:
+scitex-hub's classification (delivered today) found 4 of 13 findings are
+selectors CONTAINED by a node the app owns, which a name scan cannot see.
+Arming it now would fail correct code in 4 places instead of 2.
+
+So this release narrows the armed check without pretending to replace it. The
+docstring now states what it still cannot do — descendant combinators, and
+tier-3 selectors that reach the shell without naming anything — so the next
+reader does not mistake "fewer false positives" for "correct".
+
+### Controls, disjoint failure sets
+
+    remove comment stripping   -> only the comment test fails
+    remove name boundaries     -> only the longer-id test fails
+
+Plus a control asserting the real violation still fires: both fixes above are
+satisfied by a check that stopped reporting anything, which is exactly what a
+careless strip or an over-broad boundary produces.
+
+882 passed, 2 skipped.
+
 ## [0.20.3] - 2026-09-06
 
 Patch. Tests only — 0.20.2 put a claim in three docstrings and checked it
