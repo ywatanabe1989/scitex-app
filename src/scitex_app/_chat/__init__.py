@@ -34,6 +34,15 @@ Usage (Django, NO DATABASE — streaming only)::
     # The session views (list / detail / messages) query ChatSession and
     # ChatMessage. Mounting them into settings with no DATABASES gives a
     # 500 per request, not a degraded mode — see _models.py.
+    #
+    # TWO REQUIREMENTS, NOT ONE. A database, AND an installed app carrying
+    # the models' app_label. They come apart: the models declare an
+    # EXPLICIT app_label, so Django builds the classes without consulting
+    # INSTALLED_APPS and only resolves the app at QUERY time. A host with a
+    # real database but no registration therefore looks fine until the
+    # first request. Catch `ChatSessionsUnavailableError` for "can these
+    # work here"; the two subclasses say which requirement is missing,
+    # because the two fixes are different.
     # `chat_stream_view` is the exception: it issues no ORM QUERY.
     #
     # "No query" is the claim, NOT "no import". Importing `_django` DOES
@@ -78,10 +87,18 @@ def __getattr__(name: str):
         from ._django import chat_stream_urlpatterns
 
         return chat_stream_urlpatterns
+    if name == "ChatSessionsUnavailableError":
+        from ._session_views import ChatSessionsUnavailableError
+
+        return ChatSessionsUnavailableError
     if name == "ChatSessionsRequireADatabaseError":
         from ._session_views import ChatSessionsRequireADatabaseError
 
         return ChatSessionsRequireADatabaseError
+    if name == "ChatSessionsAppNotInstalledError":
+        from ._session_views import ChatSessionsAppNotInstalledError
+
+        return ChatSessionsAppNotInstalledError
     if name == "chat_stream_view":
         from ._django import chat_stream_view
 

@@ -7,6 +7,48 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-06
+
+Minor, additive. Fixes a gap in 0.21.0's guard, found within the hour of
+releasing it.
+
+### Fixed — the guard asked one question when there are two
+
+0.21.0 checked "is a database configured" and said these views *"require a
+configured database"*. True, and not the whole requirement. A host with a real
+database but without the models' app in `INSTALLED_APPS` sailed past the guard
+and failed deeper down with a `LookupError` about an app label — exactly the
+confusing error 0.21.0 existed to remove, surviving in a different setup.
+
+Why it was not obvious: `ChatSession` / `ChatMessage` declare an **explicit**
+`app_label`, so Django builds the classes without consulting `INSTALLED_APPS`
+and only resolves the app at QUERY time. The familiar rule "a model whose app
+is not installed blows up at import" is true and does not apply here — its
+precondition is that the model has NO explicit label.
+
+### Added — errors that say WHICH requirement is missing
+
+    ChatSessionsUnavailableError          <- catch this one
+      ChatSessionsRequireADatabaseError   <- no usable database (0.21.0's name)
+      ChatSessionsAppNotInstalledError    <- app_label not registered
+
+Two subclasses rather than one error because **the two fixes are different**,
+and an error that cannot say which requirement failed sends the reader to the
+wrong one — telling a database-less standalone host to edit `INSTALLED_APPS`
+is precisely the failure of merging them. A host that only wants "can these
+work here" catches the base.
+
+Still additive: the base subclasses `ImproperlyConfigured`, and 0.21.0's
+`ChatSessionsRequireADatabaseError` keeps its name and its meaning.
+
+### Scope
+
+Measured on scitex-hub, whose chat route is reachable **in source** and
+unmeasured in execution — a live risk, not a demonstrated live bug. The guard
+gap is independent of that: it applies to any host with a database that has
+not registered the app.
+
+
 ## [0.21.0] - 2026-09-06
 
 Minor, additive. A host with no database finally has a correct chat mount, and

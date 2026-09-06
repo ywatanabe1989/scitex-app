@@ -36,8 +36,22 @@ from ._models import ChatMessage, ChatSession
 logger = logging.getLogger(__name__)
 
 
-class ChatSessionsRequireADatabaseError(ImproperlyConfigured):
-    """A session view was called in a process with no usable database.
+class ChatSessionsUnavailableError(ImproperlyConfigured):
+    """A session view was called in a process where it cannot serve.
+
+    THE BASE TO CATCH. There are two independent requirements — a database,
+    and the models' app being installed — and a host that just wants "can
+    these views work here" should not have to enumerate them. The two
+    subclasses exist because the two FIXES are different, and an error that
+    cannot say which requirement is missing sends the reader to the wrong one.
+
+    SUBCLASSES ImproperlyConfigured, which is what Django raised here before
+    0.21.0, so a host already catching that keeps working.
+    """
+
+
+class ChatSessionsRequireADatabaseError(ChatSessionsUnavailableError):
+    """No usable database in this process.
 
     SUBCLASSES ImproperlyConfigured on purpose. That is what Django itself
     raised here before 0.21.0, so any host already catching it keeps working
@@ -73,6 +87,56 @@ _NO_DATABASE = (
 )
 
 
+class ChatSessionsAppNotInstalledError(ChatSessionsUnavailableError):
+    """A database exists, but no installed app carries the models' app_label.
+
+    THE CASE 0.21.0 MISSED, and the reason it missed it. 0.21.0 asked "is a
+    database configured" and wrote a message saying these views "require a
+    configured database". True, and not the whole requirement: `ChatSession`
+    and `ChatMessage` declare an EXPLICIT `app_label` (see `_models.py`), so
+    Django creates the classes happily and only consults the app registry
+    later, at query time. A host with a real database and no registration
+    therefore sailed past the 0.21.0 guard and failed deeper down with a
+    LookupError about an app label — the confusing error 0.21.0 existed to
+    remove, surviving in a different configuration.
+
+    Measured on scitex-hub 2026-09-06: it installs `figrecipe._django`, which
+    loads that module's DEFAULT AppConfig only, while the config that
+    registers these models is a SECOND AppConfig in the same module. One
+    INSTALLED_APPS entry does not load two AppConfigs.
+    """
+
+
+_NO_APP = (
+    "scitex_app chat SESSION views need their models registered, and no "
+    "installed app carries the app_label %r in this process. A database IS "
+    "configured — this is the OTHER requirement.\n"
+    "\n"
+    "Add the AppConfig that registers them to INSTALLED_APPS explicitly. "
+    "Naming the module is not enough if the config you need is not that "
+    "module's default AppConfig — one entry loads one config.\n"
+    "\n"
+    "If you did not mean to serve chat history at all, mount "
+    "`chat_stream_urlpatterns` instead of `chat_urlpatterns`."
+)
+
+
+def _app_is_installed(label: str) -> bool:
+    """Does an INSTALLED_APPS entry carry this app label?
+
+    Asked of the label rather than hardcoded, so the check cannot drift from
+    whatever `_models.py` declares and so it can be exercised in both
+    directions in a test.
+    """
+    from django.apps import apps
+
+    try:
+        apps.get_app_config(label)
+    except LookupError:
+        return False
+    return True
+
+
 def _database_is_configured() -> bool:
     """Does this process have a database it could actually query?
 
@@ -87,7 +151,7 @@ def _database_is_configured() -> bool:
     return bool(engine) and not engine.endswith(".dummy")
 
 
-def _requires_a_database(view):
+def _requires_usable_models(view):
     """Fail with a message that names the MOUNT mistake, before touching the ORM.
 
     Applied INNERMOST (closest to `def`), so `require_http_methods` still
@@ -99,6 +163,9 @@ def _requires_a_database(view):
     def wrapper(request, *args, **kwargs):
         if not _database_is_configured():
             raise ChatSessionsRequireADatabaseError(_NO_DATABASE)
+        label = ChatSession._meta.app_label
+        if not _app_is_installed(label):
+            raise ChatSessionsAppNotInstalledError(_NO_APP % (label,))
         return view(request, *args, **kwargs)
 
     return wrapper
@@ -119,7 +186,7 @@ def _session_to_dict(session: ChatSession, include_count: bool = True) -> dict:
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-@_requires_a_database
+@_requires_usable_models
 def session_list_view(request):
     """List or create chat sessions."""
     if request.method == "GET":
@@ -140,7 +207,7 @@ def session_list_view(request):
 
 @csrf_exempt
 @require_http_methods(["GET", "PATCH", "DELETE"])
-@_requires_a_database
+@_requires_usable_models
 def session_detail_view(request, session_id: int):
     """Get, update, or delete a specific session."""
     try:
@@ -172,7 +239,7 @@ def session_detail_view(request, session_id: int):
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-@_requires_a_database
+@_requires_usable_models
 def session_messages_view(request, session_id: int):
     """Get or add messages for a session."""
     try:
