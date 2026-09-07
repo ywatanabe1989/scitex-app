@@ -50,6 +50,39 @@ git push origin feature/my-change
 # Open PR targeting develop
 ```
 
+## Cutting a Release
+
+Pushing the version tag is what triggers publish + GitHub Release. **Push that
+tag from a linked worktree, not from the main checkout**, using literal paths:
+
+```
+git -C /path/to/repo/.worktrees/SOMETREE tag -a vX.Y.Z SHA -m "..."
+git -C /path/to/repo/.worktrees/SOMETREE push origin vX.Y.Z
+```
+
+Why this is written down rather than left to be rediscovered: the main checkout
+sits on `develop`, and the pre-push guard correctly refuses tag pushes from it.
+The tempting way around that is `gh release create` — but that **also creates
+the tag**, so the workflow then tries to create a Release that already exists
+and the `release` job goes red. Measured both directions, same workflow, one
+variable changed:
+
+    tag made by the GitHub API         release job FAILED
+    tag pushed from a linked worktree  release job SUCCESS
+
+So the workflow step is not at fault and does not need to be made idempotent —
+the API route is simply the wrong path. Let the tag push trigger the workflow,
+and let the workflow create its own Release.
+
+Two traps worth knowing, both hit more than once:
+
+- **Never put a shell variable in the `-C` argument.** The guard inspects the
+  real argv and does not run your shell, so an unexpanded variable arrives
+  literally, resolves to nothing, and is refused. Spell the path out.
+- **The guard fails closed on any `-C` path it cannot resolve**, including
+  placeholder text. That is deliberate and correct; it just means example
+  commands need real-looking paths.
+
 ## Code Style
 
 - Follow existing conventions in the codebase.
