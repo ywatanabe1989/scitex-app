@@ -127,6 +127,26 @@ configuring Django *yourself* first makes the SDK's settings silently inert —
 no error, no warning, and a `serve --host` that binds fine and then 400s if your
 own `ALLOWED_HOSTS` does not include the address.
 
+### Chat, in a profile with no database
+
+`DATABASES: {}` above is not a detail — it decides which chat routes you may
+mount. There are two mount points and they are not interchangeable:
+
+```python
+urlpatterns += chat.chat_stream_urlpatterns   # streaming only, NO database
+urlpatterns += chat.chat_urlpatterns          # + session history, needs one
+```
+
+`chat_urlpatterns` bundles the session CRUD routes and every one of those
+queries the ORM, so mounting it here is a 500 per request, not a degraded mode.
+Until 0.21.0 it was the only list published — a trap with no correct exit.
+`chat_stream_urlpatterns` is the exit, and it is the one this profile wants.
+
+Session history needs BOTH a database AND the models' app registered. Those two
+requirements come apart (a host can have one without the other), so since 0.22.0
+the views name which one is missing. Catch `chat.ChatSessionsUnavailableError`
+for "can these work here at all"; its two subclasses say which fix applies.
+
 ### Requirements
 
 - `django` (always required)

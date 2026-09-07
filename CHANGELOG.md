@@ -7,6 +7,29 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-09-07
+
+Patch, docs only. The correct option is now named where the affected reader
+looks.
+
+### Fixed — the standalone skill never mentioned chat
+
+Measured: `chat_urlpatterns` appeared **zero** times in any shipped skill, and
+`chat_stream_urlpatterns` (added 0.21.0) likewise. So the mount points existed
+only in docstrings, while `05_standalone.md` — the document a leaf author reads
+right before wiring a database-free launcher — said nothing about chat at all.
+
+That is the same defect as 0.21.0, one layer out. 0.21.0's finding was that a
+DB-less host had no correct thing to mount, and no amount of documentation
+could fix it because the option did not exist. The option exists now; leaving
+it unnamed where it would be found leaves the same person in the same place.
+
+Adds a short section to `05_standalone.md` next to the `DATABASES: {}` line: the
+two mount points and how they differ, that session history needs a database
+**and** the models' app registered, and `ChatSessionsUnavailableError` as the
+one thing to catch. It points at the names rather than restating the docstrings.
+
+
 ## [0.22.0] - 2026-09-06
 
 Minor, additive. Fixes a gap in 0.21.0's guard, found within the hour of
