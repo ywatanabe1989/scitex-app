@@ -7,6 +7,295 @@ versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-09-07
+
+Patch, docs only. The correct option is now named where the affected reader
+looks.
+
+### Fixed — the standalone skill never mentioned chat
+
+Measured: `chat_urlpatterns` appeared **zero** times in any shipped skill, and
+`chat_stream_urlpatterns` (added 0.21.0) likewise. So the mount points existed
+only in docstrings, while `05_standalone.md` — the document a leaf author reads
+right before wiring a database-free launcher — said nothing about chat at all.
+
+That is the same defect as 0.21.0, one layer out. 0.21.0's finding was that a
+DB-less host had no correct thing to mount, and no amount of documentation
+could fix it because the option did not exist. The option exists now; leaving
+it unnamed where it would be found leaves the same person in the same place.
+
+Adds a short section to `05_standalone.md` next to the `DATABASES: {}` line: the
+two mount points and how they differ, that session history needs a database
+**and** the models' app registered, and `ChatSessionsUnavailableError` as the
+one thing to catch. It points at the names rather than restating the docstrings.
+
+
+## [0.22.0] - 2026-09-06
+
+Minor, additive. Fixes a gap in 0.21.0's guard, found within the hour of
+releasing it.
+
+### Fixed — the guard asked one question when there are two
+
+0.21.0 checked "is a database configured" and said these views *"require a
+configured database"*. True, and not the whole requirement. A host with a real
+database but without the models' app in `INSTALLED_APPS` sailed past the guard
+and failed deeper down with a `LookupError` about an app label — exactly the
+confusing error 0.21.0 existed to remove, surviving in a different setup.
+
+Why it was not obvious: `ChatSession` / `ChatMessage` declare an **explicit**
+`app_label`, so Django builds the classes without consulting `INSTALLED_APPS`
+and only resolves the app at QUERY time. The familiar rule "a model whose app
+is not installed blows up at import" is true and does not apply here — its
+precondition is that the model has NO explicit label.
+
+### Added — errors that say WHICH requirement is missing
+
+    ChatSessionsUnavailableError          <- catch this one
+      ChatSessionsRequireADatabaseError   <- no usable database (0.21.0's name)
+      ChatSessionsAppNotInstalledError    <- app_label not registered
+
+Two subclasses rather than one error because **the two fixes are different**,
+and an error that cannot say which requirement failed sends the reader to the
+wrong one — telling a database-less standalone host to edit `INSTALLED_APPS`
+is precisely the failure of merging them. A host that only wants "can these
+work here" catches the base.
+
+Still additive: the base subclasses `ImproperlyConfigured`, and 0.21.0's
+`ChatSessionsRequireADatabaseError` keeps its name and its meaning.
+
+### Scope
+
+Measured on scitex-hub, whose chat route is reachable **in source** and
+unmeasured in execution — a live risk, not a demonstrated live bug. The guard
+gap is independent of that: it applies to any host with a database that has
+not registered the app.
+
+
+## [0.21.0] - 2026-09-06
+
+Minor, additive. A host with no database finally has a correct chat mount, and
+picking the wrong one now says so.
+
+### Added — `chat_stream_urlpatterns`, the database-free mount point
+
+    urlpatterns += chat.chat_stream_urlpatterns   # no database needed
+    urlpatterns += chat.chat_urlpatterns          # REQUIRES a database
+
+Until now `chat_urlpatterns` was the only list on offer, and it bundles the
+DB-free streaming route with three session CRUD routes that every one query the
+ORM. A host that configures no database — `scitex_app.run_standalone` is one,
+and it is shipped in this package — had nothing correct to mount: taking the
+only list wired in three routes that answer 500 per request. figrecipe hit
+exactly that and hand-rolled the subset; this promotes it into the SDK.
+
+`chat_urlpatterns` is now BUILT from the smaller list rather than repeating its
+route, so the two cannot drift apart, and a test asserts the subset relation.
+
+Deliberately NOT done: making one list quietly change shape depending on
+whether a database is configured. A host that adds a database later should get
+different routes because it changed its mount, not because the SDK guessed.
+
+### Added — `ChatSessionsRequireADatabaseError`, which names the actual mistake
+
+Django raised a bare `ImproperlyConfigured` here: *"settings.DATABASES is
+improperly configured. Please supply the ENGINE value."* That names a SETTING,
+not the mistake, and reads as simply wrong to a host that emptied `DATABASES`
+on purpose. The new error says what was mounted, and what to mount instead.
+
+It SUBCLASSES `ImproperlyConfigured`, so anything already catching that keeps
+working — this release breaks nothing.
+
+Scope, stated plainly: this is a better DIAGNOSIS, not a barrier. Mounting the
+full list without a database still imports and still starts; it now fails with
+a sentence that tells you what to do. Whether these views belong in this SDK at
+all is a separate open question and is not answered here.
+
+
+## [0.20.4] - 2026-09-06
+
+Patch. The ARMED CSS check stops failing correct code. Two false positives out
+of three fixtures, measured on the shipped 0.20.3 with a control.
+
+### Fixed — `AppValidator.validate_css` reads comments and name boundaries
+
+    /* do not style #main-content */    flagged   -> comments now stripped
+    .myapp #main-content-of-mine {}     flagged   -> name boundaries added
+    #main-content {}                    flagged   -> CONTROL, still flagged
+
+The first is a stylesheet **warning readers not to style a shell selector**,
+reported as targeting it. The second is an id the app owns, caught because
+`"#main-content" in content` is true of any longer name starting with it —
+the same defect `_frame.py` shed in 0.18.1, and the same boundary fixes it.
+
+Both primitives are IMPORTED from the canonical rule (`strip_css_comments`,
+and the `(?<![\w.#-])` / `(?![\w-])` pair) rather than reimplemented. This is
+the fourth thing this module now imports instead of declaring, after the JS
+patterns, the manifest keys and the skip dirs.
+
+### NOT changed — the canonical rule is still not armed
+
+The right fix is to point this method at `validate_css_canonical`, which models
+rule blocks and gets all of these right. That rule stays deliberately UNARMED:
+scitex-hub's classification (delivered today) found 4 of 13 findings are
+selectors CONTAINED by a node the app owns, which a name scan cannot see.
+Arming it now would fail correct code in 4 places instead of 2.
+
+So this release narrows the armed check without pretending to replace it. The
+docstring now states what it still cannot do — descendant combinators, and
+tier-3 selectors that reach the shell without naming anything — so the next
+reader does not mistake "fewer false positives" for "correct".
+
+### Controls, disjoint failure sets
+
+    remove comment stripping   -> only the comment test fails
+    remove name boundaries     -> only the longer-id test fails
+
+Plus a control asserting the real violation still fires: both fixes above are
+satisfied by a check that stopped reporting anything, which is exactly what a
+careless strip or an over-broad boundary produces.
+
+882 passed, 2 skipped.
+
+## [0.20.3] - 2026-09-06
+
+Patch. Tests only — 0.20.2 put a claim in three docstrings and checked it
+nowhere.
+
+### Added — the DB-free claim is now pinned by behaviour
+
+0.20.2 asserts that `chat_stream_view` issues no ORM query and is safe without
+a database, while the session views are not. §7 prefers a mechanical barrier to
+a written warning, and what shipped was three written warnings.
+
+Four tests, under `DATABASES={}` — Django's dummy backend, which is not a
+simulation of a missing database but *is* one, and is what
+`scitex_app._standalone` configures:
+
+    precondition   this process really has no database
+    claim          chat_stream_view does not raise ImproperlyConfigured
+    claim          ...nor with session_id, the argument most likely to
+                   look like it should cause a lookup
+    CONTROL        session_list_view DOES raise, under the same setup
+
+### WHY THE OBVIOUS GUARD IS NOT THE ONE THAT SHIPPED
+
+The natural test is "importing `_django` never loads `_models`". It was
+written, run, and **disproved**: `_django` imports `_session_views` at the
+bottom to assemble `chat_urlpatterns`, so the import does reach the models.
+Harmless — defining a model needs the app registry, not a connection — but it
+means import-reachability cannot express this claim.
+
+A grep cannot either. The paragraph EXPLAINING the rule raised `__init__.py`
+from 6 "ORM references" to 8, because docstring prose counts. The claim is
+about QUERIES, and only calling the views can ask about queries.
+
+### THE PRECONDITION IS A TEST, NOT AN ASSUMPTION
+
+Django settings are configured once per process and test order is not ours to
+choose. If another module configures a real database first, "did not raise
+ImproperlyConfigured" passes trivially and the file becomes decoration.
+
+Verified by making it happen: configuring a real sqlite backend fails the
+precondition AND the control — **two loud failures**, not a silent green.
+
+### Controls, disjoint failure sets
+
+    stream view made to touch the ORM  -> exactly the 2 claim tests fail
+    a REAL database configured         -> exactly precondition + control fail
+
+879 passed, 2 skipped. Provenance: figrecipe measured the original on their
+editor; this reproduces it where it can regress.
+
+## [0.20.2] - 2026-09-06
+
+Patch, docs only. One word meant three things in this package, and the
+collision is what invited 0.20.0's defect in the first place.
+
+### Fixed — "standalone" now names ONE thing
+
+    _standalone.py      the LAUNCHER, which sets DATABASES={}      <- keeps the word
+    _chat/_models.py    "simplified for standalone use"            -> SINGLE-USER
+    _chat/__init__.py   "Usage (standalone)"                       -> WITHOUT DJANGO
+    _chat/_session_views.py  "CSRF-exempt for standalone / API"    -> programmatic API
+
+Three senses, one package, and each honest in isolation. Together they told a
+leaf author — in the package's own words — that the chat views were the
+"standalone" way to use chat, while `scitex_app._standalone` is the launcher
+that configures no database for those exact views to query. figrecipe wired
+precisely that on 2026-09-06 and every session endpoint answered 500.
+
+The launcher keeps the word: it is named after it, `run_standalone()` is public
+API, and a whole shipped skill is titled *Standalone Mode*. §3 — if you must
+explain a name by restating it as something else, that something else IS the
+name.
+
+### Added — the models docstring states the requirement it assumed
+
+`ChatSession`/`ChatMessage` require a configured database. That was true before
+and written nowhere; the word that stood in its place said the opposite to a
+reader who knew the launcher.
+
+### A CORRECTION MADE WHILE WRITING THIS, kept because the error is instructive
+
+The first draft of this change also added a test asserting that importing
+`_chat._django` never loads `_models` — the obvious mechanical guard for "the
+stream view is DB-free", and §7 prefers a barrier to a warning.
+
+**Running it disproved it.** `_django.py` imports `_session_views` at the
+bottom to assemble `chat_urlpatterns`, so importing it DOES load the models.
+The test was removed rather than shipped.
+
+The stream view is still DB-free — the claim is about QUERIES, not IMPORTS, and
+defining a model needs the app registry rather than a connection. But
+import-reachability is the obvious proxy for "needs a database" and it is the
+WRONG one. That distinction is now stated in `__init__.py` where the next
+reader will reach for the same proxy.
+
+The real barrier — calling the view under `DATABASES={}` and asserting no
+`ImproperlyConfigured` — is behavioural, not doc-only, and is carded rather
+than bolted onto a docs release.
+
+## [0.20.1] - 2026-09-06
+
+Patch. 0.20.0's refusal was right to fire and wrong about why, for one of the
+two cases that reach it.
+
+### Fixed — the refusal names what it FOUND, not only what was missing
+
+Two causes reach the same line and they need different fixes:
+
+    no manifest at all        -> not an app. Wrong target. The caller's fix.
+    a manifest in another     -> an app this rule cannot read. The manifest is
+    format                       the problem, not the aim.
+
+0.20.0 said only the first, which sends the second somewhere useless: *"loop
+over your app dirs and call this per app"* tells a caller to do the thing they
+already did — the directory WAS in their loop, and this call is why it got
+skipped.
+
+The refusal now globs `manifest.*` and, when something else manifest-shaped is
+present, says so and points at the app rather than at the call site. The bare
+case gains "and nothing else manifest-shaped", so the two messages are
+distinguishable rather than one being the other's default.
+
+**Raised by scitex-hub against 0.20.0**, with the case that makes it concrete:
+`apps/legacy/notebook_app` carries a `manifest.yaml`
+(`name`/`label`/`version`/`icon`/…) and ships CSS, so "not an app directory" is
+simply false about it.
+
+### NOT changed — `manifest.json` is still the only manifest read
+
+Deliberate, and the reason is in that file: it carries `version` and lacks
+`pip_package`/`slug` — the format 0.18.0 converged away from. Reading two
+manifest formats is the menu "one dish" forbids. Refusing it is right;
+refusing it while calling it *the wrong directory* was not.
+
+So the scope of this release is the MESSAGE. No predicate changed, and hub's
+measurement stands: of their 15 no-manifest directories, 13 are `apps/infra/`
+(correctly refused) and the two edge cases produce zero findings, so nothing is
+hidden by the refusal today.
+
 ## [0.20.0] - 2026-09-06
 
 Minor, and a BREAKING change to a rule nobody has armed. The caveat that was

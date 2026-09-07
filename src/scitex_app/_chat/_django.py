@@ -92,9 +92,26 @@ from ._session_views import (
     session_messages_view,
 )
 
-# URL patterns — mount with: urlpatterns += chat_urlpatterns
-chat_urlpatterns = [
+# TWO MOUNT POINTS, BECAUSE THERE ARE TWO DEPLOYMENTS.
+#
+# `chat_stream_urlpatterns` needs NO database. `chat_urlpatterns` does, because
+# it adds the session CRUD routes and every one of those queries the ORM.
+#
+# Until 0.21.0 only the second existed, so a host that configures no database —
+# `scitex_app.run_standalone` is one — had no correct thing to mount. Mounting
+# the only list on offer wired in three routes that answer 500 per request. The
+# fix is a NAME for the subset that was always safe, not a list that silently
+# changes shape depending on settings: a host that adds a database later should
+# get different routes because it changed the mount, not because the SDK
+# guessed.
+
+chat_stream_urlpatterns = [
     path("api/chat/stream", chat_stream_view, name="scitex-chat-stream"),
+]
+
+# Everything. REQUIRES a configured database. Built from the DB-free subset
+# rather than repeating it, so the two lists cannot drift apart.
+chat_urlpatterns = chat_stream_urlpatterns + [
     # Session CRUD
     path(
         "api/chat/sessions/",

@@ -501,6 +501,56 @@ class TestValidateStructure:
 # ---------------------------------------------------------------------------
 
 
+def _shell_errors(tmp_path, css: str) -> list[str]:
+    """Run the ARMED CSS check over one stylesheet, return its shell errors."""
+    (tmp_path / "bad.css").write_text(css, encoding="utf-8")
+    validator = AppValidator(tmp_path)
+    validator.validate_css()
+    return [e for e in validator._result.errors if "shell selector" in e]
+
+
+class TestValidateCssDoesNotFlagCorrectCode:
+    """The armed check matched RAW FILE TEXT until 0.20.4.
+
+    `validate_css_canonical` models rule blocks and gets all of these right,
+    but it is deliberately UNARMED — so until it is armed, the check that
+    actually runs should at least not fail correct code. Measured on the
+    shipped 0.20.3: two of three fixtures below were false positives.
+    """
+
+    def test_a_name_inside_a_comment_is_not_a_violation(self, tmp_path):
+        """A stylesheet that WARNS readers not to style a shell selector was
+        reported as targeting it — the comment naming it was enough."""
+        # Arrange
+        css = "/* do not style #main-content */\n.mine { color: red }\n"
+        # Act
+        errors = _shell_errors(tmp_path, css)
+        # Assert
+        assert errors == []
+
+    def test_a_longer_id_that_merely_starts_with_a_shell_id_is_not_a_violation(self, tmp_path):
+        """`"#main-content" in content` is true of `#main-content-of-mine`,
+        which is an id the app owns. Same defect `_frame.py` shed in 0.18.1,
+        and the same boundary fixes it."""
+        # Arrange
+        css = ".myapp #main-content-of-mine { color: red }\n"
+        # Act
+        errors = _shell_errors(tmp_path, css)
+        # Assert
+        assert errors == []
+
+    def test_the_real_violation_still_fires(self, tmp_path):
+        """THE CONTROL. Both assertions above are satisfied by a check that
+        stopped reporting anything at all — which is precisely what a careless
+        comment-strip or an over-broad boundary would produce."""
+        # Arrange
+        css = "#main-content { color: red }\n"
+        # Act
+        errors = _shell_errors(tmp_path, css)
+        # Assert
+        assert len(errors) == 1
+
+
 class TestValidateCss:
     def test_clean_css_passes(self, tmp_path):
         # Arrange
